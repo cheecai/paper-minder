@@ -1,31 +1,36 @@
 """LLM-based relevance scoring for arXiv papers.
 
+Uses direct HTTP calls — no litellm dependency for the default MiniMax path.
+Supports multiple backends via model prefix.
+
 Model configuration via environment variables:
   PAPER_MINDER_MODEL     — model string (default: minimax/MiniMax-M2.7)
-  PAPER_MINDER_API_KEY   — API key (falls back to provider-specific env vars)
-  PAPER_MINDER_BASE_URL  — custom endpoint URL (for non-standard deployments)
+  PAPER_MINDER_API_KEY   — API key (falls back to MINIMAX_API_KEY)
+  PAPER_MINDER_BASE_URL  — custom endpoint URL
 
-Provider examples:
-  - MiniMax (Anthropic):  PAPER_MINDER_MODEL=minimax/MiniMax-M2.7
-                          PAPER_MINDER_BASE_URL=https://api.minimaxi.com/anthropic
-  - MiniMax (OpenAI):     PAPER_MINDER_MODEL=minimax/MiniMax-M2.7
-  - DeepSeek:             PAPER_MINDER_MODEL=deepseek/deepseek-chat
-  - OpenAI:               PAPER_MINDER_MODEL=gpt-4o
-  - Anthropic:            PAPER_MINDER_MODEL=claude-sonnet-4-20250514
+Supported backends:
+  - minimax/*   — MiniMax via api.minimaxi.com/v1/text/chatcompletion_v2 (default)
+  - openai/*    — OpenAI-compatible endpoints
+  - deepseek/*  — DeepSeek API
 """
 
+import json
 import os
-import litellm
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 from paper_minder.fetcher import Paper
 
-DEFAULT_MODEL = "openai/MiniMax-M2.7"
-DEFAULT_BASE_URL = "https://api.minimaxi.com/v1"
+DEFAULT_MODEL = "minimax/MiniMax-M2.7"
+MINIMAX_ENDPOINT = "https://api.minimaxi.com/v1/text/chatcompletion_v2"
 
 
 def get_model() -> str:
-    """Return the configured scoring model."""
     return os.environ.get("PAPER_MINDER_MODEL", DEFAULT_MODEL)
+
+
+def _get_api_key() -> str:
+    return os.environ.get("PAPER_MINDER_API_KEY") or os.environ.get("MINIMAX_API_KEY", "")
 
 
 SCORING_PROMPT = """You are a research assistant specialized in quantitative finance, HFT, and market microstructure.
@@ -49,47 +54,68 @@ SCORE: <1-5>
 REASON: <one sentence why this is relevant or not>"""
 
 
+def _call_minimax(prompt: str, model: str, api_key: str) -> str:
+    """Call MiniMax chat completion API directly."""
+    payload = json.dumps({
+        "model": model.split("/", 1)[1] if "/" in model else "MiniMax-M2.7",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 100,
+        "temperature": 0.0,
+    }).encode()
+    req = Request(
+        MINIMAX_ENDPOINT,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+        return data["choices"][0]["message"]["content"]
+
+
+def _call_openai_compat(prompt: str, model: str, api_key: str, base_url: str) -> str:
+    """Call an OpenAI-compatible endpoint."""
+    endpoint = base_url.rstrip("/") + "/chat/completions"
+    payload = json.dumps({
+        "model": model.split("/", 1)[1] if "/" in model else model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 100,
+        "temperature": 0.0,
+    }).encode()
+    req = Request(
+        endpoint,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+        return data["choices"][0]["message"]["content"]
+
+
 def score_paper(paper: Paper, model: str | None = None) -> Paper:
-    """Score a paper using LLM. Modifies paper in-place and returns it.
-
-    Args:
-        paper: Paper to score.
-        model: LLM model string. Falls back to get_model() if None.
-
-    Environment:
-        PAPER_MINDER_MODEL: model string override
-        PAPER_MINDER_API_KEY: API key (overrides provider defaults)
-        PAPER_MINDER_BASE_URL: custom endpoint (for non-standard deployments)
-    """
+    """Score a paper using LLM. Modifies paper in-place and returns it."""
     model = model or get_model()
-    prompt = SCORING_PROMPT.format(
-        title=paper.title,
-        abstract=paper.abstract[:2000],
-    )
-
-    # Build completion kwargs — support custom endpoints
-    kwargs: dict = dict(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=100,
-        temperature=0.0,
-    )
-
-    # Bridge MINIMAX_API_KEY -> OPENAI_API_KEY when using openai/ prefix
-    if model.startswith("openai/") and "MINIMAX_API_KEY" in os.environ:
-        if "OPENAI_API_KEY" not in os.environ:
-            os.environ["OPENAI_API_KEY"] = os.environ["MINIMAX_API_KEY"]
-
-    api_key = os.environ.get("PAPER_MINDER_API_KEY")
-    if api_key:
-        kwargs["api_key"] = api_key
-
-    base_url = os.environ.get("PAPER_MINDER_BASE_URL", DEFAULT_BASE_URL)
-    kwargs["api_base"] = base_url
+    api_key = _get_api_key()
+    base_url = os.environ.get("PAPER_MINDER_BASE_URL", "")
+    prompt = SCORING_PROMPT.format(title=paper.title, abstract=paper.abstract[:2000])
 
     try:
-        response = litellm.completion(**kwargs)
-        text = response.choices[0].message.content.strip()
+        if model.startswith("minimax/"):
+            text = _call_minimax(prompt, model, api_key)
+        elif base_url:
+            text = _call_openai_compat(prompt, model, api_key, base_url)
+        elif model.startswith("openai/"):
+            text = _call_openai_compat(prompt, model, api_key, "https://api.openai.com/v1")
+        elif model.startswith("deepseek/"):
+            text = _call_openai_compat(prompt, model, api_key, "https://api.deepseek.com/v1")
+        else:
+            # Generic OpenAI-compatible
+            text = _call_openai_compat(prompt, model, api_key, base_url or "https://api.openai.com/v1")
 
         score = 1
         reason = ""
@@ -104,6 +130,7 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
 
         paper.score = max(1, min(5, score))
         paper.relevance_reason = reason
+
     except Exception as e:
         print(f"[WARN] LLM scoring failed for {paper.arxiv_id}: {e}")
         paper.score = 0
@@ -112,11 +139,7 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
     return paper
 
 
-def score_papers(
-    papers: list[Paper],
-    model: str | None = None,
-) -> list[Paper]:
-    """Score a list of papers in-place. Returns the same list."""
+def score_papers(papers: list[Paper], model: str | None = None) -> list[Paper]:
     for paper in papers:
         score_paper(paper, model=model)
     return papers

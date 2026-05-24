@@ -4,7 +4,7 @@ from paper_minder.scorer import get_model, score_paper
 
 
 def test_get_model_default():
-    assert get_model() == "openai/MiniMax-M2.7"
+    assert get_model() == "minimax/MiniMax-M2.7"
 
 
 def test_get_model_from_env(monkeypatch):

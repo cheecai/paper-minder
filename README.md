@@ -32,9 +32,8 @@ python -m paper_minder --no-score --max-results 5
 
 | Env Var | Default | Description |
 |---------|---------|-------------|
-| `PAPER_MINDER_MODEL` | `openai/MiniMax-M2.7` | LLM model for scoring |
-| `PAPER_MINDER_BASE_URL` | `https://api.minimaxi.com/v1` | API endpoint |
-| `MINIMAX_API_KEY` | (required) | MiniMax API key |
+| `PAPER_MINDER_MODEL` | `minimax/MiniMax-M2.7` | LLM model for scoring |
+| `PAPER_MINDER_API_KEY` | `$MINIMAX_API_KEY` | API key (falls back to MINIMAX_API_KEY) |
 | (any litellm key) | — | For other providers (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.) |
 
 Model is configurable via `--model` flag or `PAPER_MINDER_MODEL` env var:
