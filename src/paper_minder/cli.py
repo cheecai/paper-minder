@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+from pathlib import Path
 
 from paper_minder.fetcher import fetch_all, CATEGORIES
 from paper_minder.scorer import score_paper, get_model
@@ -36,6 +37,10 @@ def main():
     parser.add_argument(
         "--no-score", action="store_true",
         help="Skip LLM scoring (fetch + store only, existing scores preserved)",
+    )
+    parser.add_argument(
+        "--output", "-o", type=str, default=None,
+        help="Save digest to file (e.g. ~/hermes/hft/quant/digest.md)",
     )
     args = parser.parse_args()
 
@@ -87,6 +92,12 @@ def main():
     # ── Digest ─────────────────────────────────────────────────────
     digest = format_digest(scored)
     print(digest)
+
+    if args.output:
+        out_path = Path(args.output).expanduser()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(digest)
+        print(f"📄 Digest saved to {out_path}", file=sys.stderr)
 
 
 if __name__ == "__main__":
