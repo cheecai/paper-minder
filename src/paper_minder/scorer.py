@@ -29,8 +29,16 @@ def get_model() -> str:
     return os.environ.get("PAPER_MINDER_MODEL", DEFAULT_MODEL)
 
 
-def _get_api_key() -> str:
-    return os.environ.get("PAPER_MINDER_API_KEY") or os.environ.get("MINIMAX_API_KEY", "")
+def _get_api_key(model: str = "") -> str:
+    """Get API key, preferring provider-specific env vars based on model prefix."""
+    key = os.environ.get("PAPER_MINDER_API_KEY", "")
+    if key:
+        return key
+    if model.startswith("deepseek/"):
+        return os.environ.get("DEEPSEEK_API_KEY", "")
+    if model.startswith("openai/"):
+        return os.environ.get("OPENAI_API_KEY", "")
+    return os.environ.get("MINIMAX_API_KEY", "")
 
 
 SCORING_PROMPT = """You are a research assistant specialized in quantitative finance, HFT, and market microstructure.
@@ -100,7 +108,7 @@ def _call_openai_compat(prompt: str, model: str, api_key: str, base_url: str) ->
 def score_paper(paper: Paper, model: str | None = None) -> Paper:
     """Score a paper using LLM. Modifies paper in-place and returns it."""
     model = model or get_model()
-    api_key = _get_api_key()
+    api_key = _get_api_key(model)
     base_url = os.environ.get("PAPER_MINDER_BASE_URL", "")
     prompt = SCORING_PROMPT.format(title=paper.title, abstract=paper.abstract[:2000])
 
