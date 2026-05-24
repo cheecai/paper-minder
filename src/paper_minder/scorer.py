@@ -75,6 +75,11 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
         temperature=0.0,
     )
 
+    # Bridge MINIMAX_API_KEY -> OPENAI_API_KEY when using openai/ prefix
+    if model.startswith("openai/") and "MINIMAX_API_KEY" in os.environ:
+        if "OPENAI_API_KEY" not in os.environ:
+            os.environ["OPENAI_API_KEY"] = os.environ["MINIMAX_API_KEY"]
+
     api_key = os.environ.get("PAPER_MINDER_API_KEY")
     if api_key:
         kwargs["api_key"] = api_key
