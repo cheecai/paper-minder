@@ -32,7 +32,7 @@ def main():
     )
     parser.add_argument(
         "--model", type=str, default=None,
-        help="LLM model string (default: PAPER_MINDER_MODEL env or minimax/MiniMax-M2.7)",
+        help="LLM model string (default: PAPER_MINDER_MODEL env or deepseek/deepseek-chat)",
     )
     parser.add_argument(
         "--no-score", action="store_true",

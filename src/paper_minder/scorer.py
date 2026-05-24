@@ -22,7 +22,7 @@ from urllib.error import HTTPError, URLError
 
 from paper_minder.fetcher import Paper
 
-DEFAULT_MODEL = "minimax/MiniMax-M2.7"
+DEFAULT_MODEL = "deepseek/deepseek-chat"
 MINIMAX_ENDPOINT = "https://api.minimaxi.com/v1/text/chatcompletion_v2"
 _last_url = ""  # debug: last attempted URL
 
