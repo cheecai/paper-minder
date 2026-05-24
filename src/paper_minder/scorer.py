@@ -97,7 +97,7 @@ def _call_openai_compat(prompt: str, model: str, api_key: str, base_url: str) ->
     payload = json.dumps({
         "model": model.split("/", 1)[1] if "/" in model else model,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 100,
+        "max_tokens": 500,
         "temperature": 0.0,
     }).encode()
     req = Request(
@@ -110,7 +110,9 @@ def _call_openai_compat(prompt: str, model: str, api_key: str, base_url: str) ->
     )
     with urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read())
-        return data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
+        # DeepSeek v4-pro / reasoning models: content may be in reasoning_content
+        return msg.get("content") or msg.get("reasoning_content", "")
 
 
 def score_paper(paper: Paper, model: str | None = None, _retry_ok: bool = True) -> Paper:
@@ -170,6 +172,6 @@ def score_papers(papers: list[Paper], model: str | None = None) -> list[Paper]:
     import time
     for i, paper in enumerate(papers):
         score_paper(paper, model=model)
-        if i > 0 and i % 20 == 0:
-            time.sleep(2.0)  # rate-limit: pause every 20 requests
+        if i > 0 and i % 5 == 0:
+            time.sleep(3.0)  # rate-limit: pause every 5 requests
     return papers
