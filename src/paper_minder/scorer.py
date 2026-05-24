@@ -71,7 +71,7 @@ def _call_minimax(prompt: str, model: str, api_key: str) -> str:
     payload = json.dumps({
         "model": model.split("/", 1)[1] if "/" in model else "MiniMax-M2.7",
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 300,
+        "max_tokens": 500,
         "temperature": 0.0,
     }).encode()
     req = Request(
@@ -143,11 +143,6 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
                     pass
             elif line.upper().startswith("REASON:"):
                 reason = line.split(":", 1)[1].strip()
-
-        # DEBUG: log first response to diagnose parsing
-        if not hasattr(score_paper, "_logged"):
-            score_paper._logged = True  # type: ignore
-            print(f"[DEBUG] Raw LLM response: {repr(text[:300])}", file=sys.stderr)
 
         paper.score = max(1, min(5, score))
         paper.relevance_reason = reason
