@@ -1,15 +1,17 @@
 """LLM-based relevance scoring for arXiv papers.
 
-Model configuration:
-  1. PAPER_MINDER_MODEL env var (e.g. "minimax/MiniMax-M2.7")
-  2. Falls back to DEFAULT_MODEL if not set
-  3. Set MINIMAX_API_KEY (or provider-specific key) in environment
+Model configuration via environment variables:
+  PAPER_MINDER_MODEL     — model string (default: minimax/MiniMax-M2.7)
+  PAPER_MINDER_API_KEY   — API key (falls back to provider-specific env vars)
+  PAPER_MINDER_BASE_URL  — custom endpoint URL (for non-standard deployments)
 
 Provider examples:
-  - MiniMax:   minimax/MiniMax-M2.7
-  - DeepSeek:  deepseek/deepseek-chat
-  - OpenAI:    gpt-4o
-  - Anthropic: claude-sonnet-4-20250514
+  - MiniMax (Anthropic):  PAPER_MINDER_MODEL=minimax/MiniMax-M2.7
+                          PAPER_MINDER_BASE_URL=https://api.minimaxi.com/anthropic
+  - MiniMax (OpenAI):     PAPER_MINDER_MODEL=minimax/MiniMax-M2.7
+  - DeepSeek:             PAPER_MINDER_MODEL=deepseek/deepseek-chat
+  - OpenAI:               PAPER_MINDER_MODEL=gpt-4o
+  - Anthropic:            PAPER_MINDER_MODEL=claude-sonnet-4-20250514
 """
 
 import os
@@ -52,6 +54,11 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
     Args:
         paper: Paper to score.
         model: LLM model string. Falls back to get_model() if None.
+
+    Environment:
+        PAPER_MINDER_MODEL: model string override
+        PAPER_MINDER_API_KEY: API key (overrides provider defaults)
+        PAPER_MINDER_BASE_URL: custom endpoint (for non-standard deployments)
     """
     model = model or get_model()
     prompt = SCORING_PROMPT.format(
@@ -59,13 +66,24 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
         abstract=paper.abstract[:2000],
     )
 
+    # Build completion kwargs — support custom endpoints
+    kwargs: dict = dict(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=100,
+        temperature=0.0,
+    )
+
+    api_key = os.environ.get("PAPER_MINDER_API_KEY")
+    if api_key:
+        kwargs["api_key"] = api_key
+
+    base_url = os.environ.get("PAPER_MINDER_BASE_URL")
+    if base_url:
+        kwargs["api_base"] = base_url
+
     try:
-        response = litellm.completion(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=100,
-            temperature=0.0,
-        )
+        response = litellm.completion(**kwargs)
         text = response.choices[0].message.content.strip()
 
         score = 1
