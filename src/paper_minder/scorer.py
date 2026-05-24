@@ -71,7 +71,7 @@ def _call_minimax(prompt: str, model: str, api_key: str) -> str:
     payload = json.dumps({
         "model": model.split("/", 1)[1] if "/" in model else "MiniMax-M2.7",
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 100,
+        "max_tokens": 300,
         "temperature": 0.0,
     }).encode()
     req = Request(
@@ -84,7 +84,9 @@ def _call_minimax(prompt: str, model: str, api_key: str) -> str:
     )
     with urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read())
-        return data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
+        # MiniMax-M2.7 is a reasoning model — content may be in reasoning_content
+        return msg.get("content") or msg.get("reasoning_content", "")
 
 
 def _call_openai_compat(prompt: str, model: str, api_key: str, base_url: str) -> str:
