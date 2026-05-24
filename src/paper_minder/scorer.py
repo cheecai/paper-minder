@@ -19,7 +19,8 @@ import litellm
 
 from paper_minder.fetcher import Paper
 
-DEFAULT_MODEL = "minimax/MiniMax-M2.7"
+DEFAULT_MODEL = "openai/MiniMax-M2.7"
+DEFAULT_BASE_URL = "https://api.minimaxi.com/v1"
 
 
 def get_model() -> str:
@@ -78,9 +79,8 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
     if api_key:
         kwargs["api_key"] = api_key
 
-    base_url = os.environ.get("PAPER_MINDER_BASE_URL")
-    if base_url:
-        kwargs["api_base"] = base_url
+    base_url = os.environ.get("PAPER_MINDER_BASE_URL", DEFAULT_BASE_URL)
+    kwargs["api_base"] = base_url
 
     try:
         response = litellm.completion(**kwargs)
