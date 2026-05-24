@@ -16,6 +16,7 @@ Supported backends:
 
 import json
 import os
+import sys
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -23,6 +24,7 @@ from paper_minder.fetcher import Paper
 
 DEFAULT_MODEL = "minimax/MiniMax-M2.7"
 MINIMAX_ENDPOINT = "https://api.minimaxi.com/v1/text/chatcompletion_v2"
+_last_url = ""  # debug: last attempted URL
 
 
 def get_model() -> str:
@@ -64,6 +66,8 @@ REASON: <one sentence why this is relevant or not>"""
 
 def _call_minimax(prompt: str, model: str, api_key: str) -> str:
     """Call MiniMax chat completion API directly."""
+    global _last_url
+    _last_url = MINIMAX_ENDPOINT
     payload = json.dumps({
         "model": model.split("/", 1)[1] if "/" in model else "MiniMax-M2.7",
         "messages": [{"role": "user", "content": prompt}],
@@ -85,7 +89,9 @@ def _call_minimax(prompt: str, model: str, api_key: str) -> str:
 
 def _call_openai_compat(prompt: str, model: str, api_key: str, base_url: str) -> str:
     """Call an OpenAI-compatible endpoint."""
+    global _last_url
     endpoint = base_url.rstrip("/") + "/chat/completions"
+    _last_url = endpoint
     payload = json.dumps({
         "model": model.split("/", 1)[1] if "/" in model else model,
         "messages": [{"role": "user", "content": prompt}],
@@ -141,6 +147,7 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
 
     except Exception as e:
         print(f"[WARN] LLM scoring failed for {paper.arxiv_id}: {e}")
+        print(f"[DEBUG] URL: {_last_url}", file=sys.stderr)
         paper.score = 0
         paper.relevance_reason = "scoring error"
 
