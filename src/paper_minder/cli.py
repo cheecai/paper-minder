@@ -107,7 +107,8 @@ def main():
         print("🧪 Dry run — nothing stored", file=sys.stderr)
 
     # ── Digest ─────────────────────────────────────────────────────
-    digest = format_digest(scored)
+    new_ids = {p.arxiv_id for p in to_score if p.score >= args.min_score}
+    digest = format_digest(scored, new_ids=new_ids)
     print(digest)
 
     if args.output:
