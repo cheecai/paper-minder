@@ -142,6 +142,11 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
             elif line.upper().startswith("REASON:"):
                 reason = line.split(":", 1)[1].strip()
 
+        # DEBUG: log first response to diagnose parsing
+        if not hasattr(score_paper, "_logged"):
+            score_paper._logged = True  # type: ignore
+            print(f"[DEBUG] Raw LLM response: {repr(text[:300])}", file=sys.stderr)
+
         paper.score = max(1, min(5, score))
         paper.relevance_reason = reason
 
