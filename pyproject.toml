@@ -1,0 +1,24 @@
+[project]
+name = "paper-minder"
+version = "0.1.0"
+description = "arXiv paper monitor for HFT/microstructure research"
+requires-python = ">=3.12"
+dependencies = [
+    "feedparser>=6.0",
+    "requests>=2.32",
+    "litellm>=1.50",
+    "rich>=13.0",
+]
+
+[project.scripts]
+paper-minder = "paper_minder.cli:main"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
