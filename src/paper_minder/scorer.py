@@ -113,8 +113,9 @@ def _call_openai_compat(prompt: str, model: str, api_key: str, base_url: str) ->
         return data["choices"][0]["message"]["content"]
 
 
-def score_paper(paper: Paper, model: str | None = None) -> Paper:
-    """Score a paper using LLM. Modifies paper in-place and returns it."""
+def score_paper(paper: Paper, model: str | None = None, _retry_ok: bool = True) -> Paper:
+    """Score a paper using LLM. Modifies paper in-place and returns it.
+    _retry_ok: internal — set False to prevent recursive 529 retry."""
     model = model or get_model()
     api_key = _get_api_key(model)
     base_url = os.environ.get("PAPER_MINDER_BASE_URL", "")
@@ -148,6 +149,15 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
         paper.relevance_reason = reason
 
     except Exception as e:
+        err_msg = str(e)
+        # Retry once on 529 (overload)
+        if _retry_ok and "529" in err_msg:
+            import time
+            time.sleep(3)
+            try:
+                return score_paper(paper, model, _retry_ok=False)
+            except Exception:
+                pass
         print(f"[WARN] LLM scoring failed for {paper.arxiv_id}: {e}")
         print(f"[DEBUG] URL: {_last_url}", file=sys.stderr)
         paper.score = 0
@@ -157,6 +167,9 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
 
 
 def score_papers(papers: list[Paper], model: str | None = None) -> list[Paper]:
-    for paper in papers:
+    import time
+    for i, paper in enumerate(papers):
         score_paper(paper, model=model)
+        if i > 0 and i % 20 == 0:
+            time.sleep(2.0)  # rate-limit: pause every 20 requests
     return papers
