@@ -62,13 +62,30 @@ def main():
     print(f"📋 {len(unique)} unique papers", file=sys.stderr)
 
     # ── Score ──────────────────────────────────────────────────────
-    if not args.no_score:
-        print(f"🤖 Scoring with {model}...", file=sys.stderr)
-        for i, paper in enumerate(unique):
+    # Load existing scores from DB to avoid re-scoring
+    existing_scores = {}
+    if not args.dry_run:
+        conn = get_db()
+        rows = conn.execute(
+            "SELECT arxiv_id, score, relevance_reason FROM papers WHERE score > 0"
+        ).fetchall()
+        existing_scores = {r["arxiv_id"]: (r["score"], r["relevance_reason"]) for r in rows}
+        conn.close()
+
+    to_score = [p for p in unique if p.arxiv_id not in existing_scores]
+    already_scored = [p for p in unique if p.arxiv_id in existing_scores]
+    for p in already_scored:
+        p.score, p.relevance_reason = existing_scores[p.arxiv_id]
+
+    if not args.no_score and to_score:
+        print(f"🤖 Scoring {len(to_score)} new papers with {model}... ({len(already_scored)} cached)", file=sys.stderr)
+        for i, paper in enumerate(to_score):
             score_paper(paper, model=model)
             if (i + 1) % 10 == 0:
-                print(f"   Scored {i+1}/{len(unique)}...", file=sys.stderr)
-        print(f"   Done: {len(unique)} papers scored", file=sys.stderr)
+                print(f"   Scored {i+1}/{len(to_score)}...", file=sys.stderr)
+        print(f"   Done: {len(to_score)} papers scored", file=sys.stderr)
+    elif not to_score:
+        print(f"✅ All {len(unique)} papers already scored — using cached scores", file=sys.stderr)
 
     scored = [p for p in unique if p.score >= args.min_score]
     scored.sort(key=lambda p: p.score, reverse=True)
