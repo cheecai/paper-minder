@@ -121,15 +121,15 @@ def score_paper(paper: Paper, model: str | None = None) -> Paper:
     try:
         if model.startswith("minimax/"):
             text = _call_minimax(prompt, model, api_key)
-        elif base_url:
-            text = _call_openai_compat(prompt, model, api_key, base_url)
-        elif model.startswith("openai/"):
-            text = _call_openai_compat(prompt, model, api_key, "https://api.openai.com/v1")
         elif model.startswith("deepseek/"):
             text = _call_openai_compat(prompt, model, api_key, "https://api.deepseek.com/v1")
+        elif model.startswith("openai/"):
+            text = _call_openai_compat(prompt, model, api_key, "https://api.openai.com/v1")
+        elif base_url:
+            text = _call_openai_compat(prompt, model, api_key, base_url)
         else:
             # Generic OpenAI-compatible
-            text = _call_openai_compat(prompt, model, api_key, base_url or "https://api.openai.com/v1")
+            text = _call_openai_compat(prompt, model, api_key, "https://api.openai.com/v1")
 
         score = 1
         reason = ""
