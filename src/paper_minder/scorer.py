@@ -17,10 +17,39 @@ Supported backends:
 import json
 import os
 import sys
+from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from paper_minder.fetcher import Paper
+
+
+def _load_env_file() -> None:
+    """Populate missing API keys from the Hermes env file.
+
+    Cron shells start with a bare environment, so provider keys stored in
+    ~/.hermes/.env are invisible to os.environ. Load them without
+    overwriting anything already exported.
+    """
+    env_path = Path.home() / ".hermes" / ".env"
+    if not env_path.exists():
+        return
+    try:
+        lines = env_path.read_text().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and value and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_env_file()
 
 DEFAULT_MODEL = "deepseek/deepseek-chat"
 MINIMAX_ENDPOINT = "https://api.minimaxi.com/v1/text/chatcompletion_v2"
