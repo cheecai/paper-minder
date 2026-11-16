@@ -21,6 +21,8 @@ def _make_conn():
             updated TEXT,
             score INTEGER DEFAULT 0,
             relevance_reason TEXT DEFAULT '',
+            pdf_url TEXT DEFAULT '',
+            local_path TEXT DEFAULT '',
             fetched_at TEXT DEFAULT (datetime('now'))
         )
     """)

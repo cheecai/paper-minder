@@ -11,7 +11,8 @@ arXiv API → Fetcher (feedparser) → LLM Scorer → SQLite Store → Markdown 
 1. **Fetch** — Queries arXiv API for new papers in q-fin categories (TR, ST, CP, MF, PM)
 2. **Score** — Each paper is scored 1–5 by LLM for HFT/microstructure relevance
 3. **Store** — Papers stored in SQLite with dedup by arXiv ID
-4. **Digest** — Markdown digest of papers scored ≥3, with relevance reasons
+4. **Download** — PDFs for high-score papers (≥4) automatically downloaded
+5. **Digest** — Markdown digest of papers scored ≥3, with relevance reasons
 
 ## Quick Start
 
@@ -58,17 +59,20 @@ PAPER_MINDER_MODEL=gpt-4o python -m paper_minder
 ## Options
 
 ```
---dry-run         Fetch + score, skip DB write
---min-score N     Minimum score for digest (default: 3)
---categories ...  Specific arXiv categories (default: all 5 q-fin)
---max-results N   Max papers per category (default: 100)
---model MODEL     LLM model string
---no-score        Skip LLM scoring (fetch only)
+--dry-run              Fetch + score, skip DB write
+--min-score N          Minimum score for digest (default: 4)
+--categories ...       Specific arXiv categories (default: all 5 q-fin)
+--max-results N        Max papers per category (default: 100)
+--model MODEL          LLM model string
+--no-score             Skip LLM scoring (fetch only)
+--download             Download PDFs for high-score papers
+--download-dir PATH    Directory for PDFs (default: ~/hermes/hft/papers)
+--download-min-score N Min score for downloading (default: same as --min-score)
 ```
 
 ## Data
 
-SQLite database at `~/.paper-minder/papers.db`.
+SQLite database at `~/.paper-minder/papers.db`. PDFs stored at `~/hermes/hft/papers/` (only for papers scored ≥4).
 
 ## Schedule
 

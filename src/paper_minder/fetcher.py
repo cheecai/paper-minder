@@ -8,7 +8,13 @@ from typing import Optional
 import feedparser
 import requests
 
-ARXIV_API = "http://export.arxiv.org/api/query"
+ARXIV_API = "https://export.arxiv.org/api/query"
+
+# arXiv occasionally stalls on a cold connection; a single timeout used to
+# silently drop an entire category from the run. Retry with backoff.
+FETCH_TIMEOUT = 60
+FETCH_RETRIES = 3
+FETCH_BACKOFF = 5.0
 
 CATEGORIES = [
     "q-fin.TR",   # Trading and Market Microstructure
@@ -30,6 +36,15 @@ class Paper:
     updated: str     # YYYY-MM-DD
     score: int = 0
     relevance_reason: str = ""
+    local_path: str = ""   # path to downloaded PDF, if any
+
+    @property
+    def pdf_url(self) -> str:
+        return f"https://arxiv.org/pdf/{self.arxiv_id}.pdf"
+
+    @property
+    def abs_url(self) -> str:
+        return f"https://arxiv.org/abs/{self.arxiv_id}"
 
 
 def _extract_arxiv_id(entry) -> str:
@@ -73,18 +88,35 @@ def _parse_entry(entry) -> Paper:
 
 
 def fetch_category(category: str, max_results: int = 200) -> list[Paper]:
-    """Fetch recent papers from a single arXiv category."""
+    """Fetch recent papers from a single arXiv category, with retries."""
     params = {
         "search_query": f"cat:{category}",
         "sortBy": "submittedDate",
         "sortOrder": "descending",
         "max_results": max_results,
     }
-    resp = requests.get(ARXIV_API, params=params, timeout=30)
-    resp.raise_for_status()
-    feed = feedparser.parse(resp.text)
-    papers = [_parse_entry(e) for e in feed.entries]
-    return papers
+    last_err = None
+    for attempt in range(1, FETCH_RETRIES + 1):
+        try:
+            resp = requests.get(
+                ARXIV_API, params=params, timeout=FETCH_TIMEOUT
+            )
+            resp.raise_for_status()
+            feed = feedparser.parse(resp.text)
+            papers = [_parse_entry(e) for e in feed.entries]
+            if not papers:
+                raise ValueError("empty feed")
+            return papers
+        except Exception as e:  # noqa: BLE001 - retry any transport/parse error
+            last_err = e
+            if attempt < FETCH_RETRIES:
+                wait = FETCH_BACKOFF * attempt
+                print(
+                    f"[WARN] {category} attempt {attempt}/{FETCH_RETRIES} "
+                    f"failed ({e}); retrying in {wait:.0f}s"
+                )
+                time.sleep(wait)
+    raise RuntimeError(f"{category}: {last_err}")
 
 
 def fetch_all(
