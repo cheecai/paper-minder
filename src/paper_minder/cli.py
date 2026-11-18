@@ -2,13 +2,28 @@
 
 import argparse
 import sys
+from datetime import date
 from pathlib import Path
 
 from paper_minder.fetcher import fetch_all, CATEGORIES
 from paper_minder.scorer import score_paper, get_model
-from paper_minder.store import get_db, upsert_paper, mark_downloaded
+from paper_minder.store import (
+    get_db,
+    upsert_paper,
+    mark_downloaded,
+    record_arrivals,
+    get_arrivals,
+    get_meta,
+    set_meta,
+    seed_arrivals,
+)
 from paper_minder.digest import format_digest
 from paper_minder.downloader import download_papers, PDF_DIR_DEFAULT
+
+# Sentinel date for papers that predate the arrivals log (backfilled at
+# migration time). They were seen before the monitor tracked arrivals, so
+# their true arrival date is unknown — never count them as "new".
+LEGACY_DATE = "unknown"
 
 
 def main():
@@ -55,6 +70,15 @@ def main():
         "--download-min-score", type=int, default=None,
         help="Min score for downloading PDFs (default: same as --min-score)",
     )
+    parser.add_argument(
+        "--arrivals-cutover-id", type=int, default=0,
+        help=(
+            "One-time migration: papers with a DB id above this value were "
+            "inserted before the arrivals log existed but ARE today's "
+            "arrivals, so they get dated today. Papers at or below it are "
+            "legacy (true arrival date unknowable) and never count as new."
+        ),
+    )
     args = parser.parse_args()
 
     model = args.model or get_model()
@@ -96,6 +120,53 @@ def main():
             for r in conn.execute("SELECT arxiv_id FROM papers").fetchall()
         }
         conn.close()
+
+    # ── Arrivals ───────────────────────────────────────────────────
+    # "New" must mean "first sighted today", and that has to survive a
+    # same-day retry (arXiv rate-limits categories often enough that a
+    # retry is routine). Deriving it from a live DB snapshot does not: the
+    # first attempt already inserted the papers, so every retry reports 0
+    # new. The arrivals log is persistent and written at INSERT time, so
+    # a retry still sees today's arrivals.
+    today = date.today().isoformat()
+    arrivals_total = 0
+    arrivals_new = 0
+    if not args.dry_run:
+        conn = get_db()
+        if get_meta(conn, "arrivals_seeded") is None:
+            # Baseline = the newest paper that predates the arrivals log.
+            # Default: every existing paper is legacy (its true arrival date
+            # is unknowable), so only papers arriving from now on count as
+            # new. A deployment can set `arrivals_cutover_id` in the meta
+            # table to a lower id to date the papers inserted by a
+            # pre-migration run.
+            baseline = int(get_meta(conn, "arrivals_cutover_id", "0"))
+            if args.arrivals_cutover_id > 0:
+                baseline = args.arrivals_cutover_id
+            if baseline <= 0:
+                row = conn.execute("SELECT MAX(id) FROM papers").fetchone()
+                baseline = row[0] or 0
+            legacy, recent = seed_arrivals(
+                conn, baseline, LEGACY_DATE, today
+            )
+            set_meta(conn, "arrivals_seeded", "1")
+            set_meta(conn, "arrivals_cutover_id", str(baseline))
+            print(
+                f"🧾 Seeded arrivals log: {legacy} legacy, {recent} dated today",
+                file=sys.stderr,
+            )
+        # Ids fetched this run that were never logged before are genuinely
+        # new arrivals.
+        arrivals_new = record_arrivals(
+            conn, [p.arxiv_id for p in unique], today
+        )
+        arrivals_total = len(get_arrivals(conn, today))
+        conn.close()
+        print(
+            f"📥 Arrivals: {arrivals_new} new this run, "
+            f"{arrivals_total} total seen today",
+            file=sys.stderr,
+        )
 
     to_score = [p for p in unique if p.arxiv_id not in existing_scores]
     already_scored = [p for p in unique if p.arxiv_id in existing_scores]
@@ -161,14 +232,17 @@ def main():
             print(f"📭 No papers scored ≥{download_score} to download", file=sys.stderr)
 
     # ── Digest ─────────────────────────────────────────────────────
-    # "New" = papers the monitor had never seen before this run (not in the
-    # DB at all). Papers re-scored because they previously scored below the
-    # storage threshold are NOT new.
-    new_ids = {
-        p.arxiv_id
-        for p in scored
-        if p.arxiv_id not in known_ids
-    }
+    # "New" = papers first sighted TODAY (per the arrivals log), among the
+    # papers that made the digest. Reading it from the arrivals log (not
+    # from a DB snapshot) keeps the count correct across same-day retries.
+    if not args.dry_run:
+        conn = get_db()
+        new_ids = get_arrivals(conn, today) & {p.arxiv_id for p in scored}
+        conn.close()
+    else:
+        new_ids = {
+            p.arxiv_id for p in scored if p.arxiv_id not in known_ids
+        }
     digest = format_digest(scored, new_ids=new_ids)
     print(digest)
 

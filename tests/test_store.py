@@ -26,6 +26,12 @@ def _make_conn():
             fetched_at TEXT DEFAULT (datetime('now'))
         )
     """)
+    conn.execute("""
+        CREATE TABLE arrivals (
+            arxiv_id TEXT PRIMARY KEY,
+            first_seen_date TEXT NOT NULL
+        )
+    """)
     conn.commit()
     return conn
 
